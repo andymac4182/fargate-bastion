@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Serverless Bastion/Jumpbox for use with ecsgo.
+Parameters:
+  Name:
+    Description: The name of a family that this task definition is registered to.
+    Type: String
+    Default: serverless-bastion
+  VpcId:
+    Description: VPC to deploy into
+    Type: AWS::EC2::VPC::Id
+  Subnets:
+    Description: Subnets to deploy Serverless Bastion into
+    Type: List<AWS::EC2::Subnet::Id>
+  AssignPublicIp:
+    Description: For subnets with an Internet Gateway set to ENABLED else DISABLED.
+    Type: String
+    AllowedValues:
+      - ENABLED
+      - DISABLED
+    Default: DISABLED
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref Name
+      RetentionInDays: 90
+  
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref Name
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref Cluster
+      ServiceName: !Ref Name
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref TaskDefinition
+      EnableExecuteCommand: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !Ref SecurityGroup
+          AssignPublicIp: ENABLED
+          Subnets: !Ref Subnets
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+      - Name: app
+        Image: public.ecr.aws/amazonlinux/amazonlinux:latest
+        Essential: true
+        EntryPoint: ["sleep", "infinity"]
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-region:
+              Ref: AWS::Region
+            awslogs-group:
+              Ref: LogGroup
+            awslogs-stream-prefix: app
+      Cpu: 256
+      ExecutionRoleArn:
+        Fn::GetAtt:
+        - TaskExecutionRole
+        - Arn
+      Family:
+        Ref: Name
+      Memory: 512
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+      TaskRoleArn:
+        Fn::GetAtt:
+        - TaskRole
+        - Arn
+  
+ 
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+      - PolicyName: AmazonECSTaskExecutionRolePolicy
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - ecr:GetAuthorizationToken
+            - ecr:BatchCheckLayerAvailability
+            - ecr:GetDownloadUrlForLayer
+            - ecr:BatchGetImage
+            Resource: '*'
+          - Effect: Allow
+            Action:
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+              Fn::GetAtt:
+              - LogGroup
+              - Arn
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+  
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow all outgoing
+      VpcId:
+        Ref: VpcId
+      SecurityGroupEgress:
+        - IpProtocol: -1          
+          CidrIp: 0.0.0.0/0
