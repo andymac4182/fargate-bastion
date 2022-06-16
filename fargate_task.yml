@@ -35,7 +35,6 @@ Resources:
     Properties:
       Cluster: !Ref Cluster
       ServiceName: !Ref Name
-      LaunchType: FARGATE
       DesiredCount: 1
       TaskDefinition: !Ref TaskDefinition
       EnableExecuteCommand: true
@@ -45,6 +44,11 @@ Resources:
             - !Ref SecurityGroup
           AssignPublicIp: ENABLED
           Subnets: !Ref Subnets
+      CapacityProviderStrategy:
+        -
+          Base: 1
+          CapacityProvider: FARGATE_SPOT
+          Weight: 1
 
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -73,9 +77,6 @@ Resources:
       NetworkMode: awsvpc
       RequiresCompatibilities:
       - FARGATE
-      RuntimePlatform:
-        CpuArchitecture: ARM64
-        OperatingSystemFamily: LINUX
       TaskRoleArn:
         Fn::GetAtt:
         - TaskRole
